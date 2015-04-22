@@ -69,20 +69,18 @@ class StackInstruction(object):
     def opcode(self):
         return opname_to_opcode_dict[self.opname]
 
-    # number of values removed from stack as inputs to the instruction
-    n_pop = 0
-    # number of values added back to the stack as outputs of the instruction
-    n_push = 0
-
-    # number of blocks popped from the block stack
-    n_pop_block = 0
-    # number of blocks pushed on the block stack
-    n_push_block = 0
-
+    def run(self,
+            value_stack,
+            block_stack,
+            globals_dict,
+            locals_dict,
+            closure_cells):
+        raise ValueError("Method 'run' not implemented for %s" % self.opname)
 
 class NOP(StackInstruction):
     """Do nothing code. Used as a placeholder by the bytecode optimizer."""
-    pass
+    def run(self, *args, **kwargs):
+        pass
 
 class POP_TOP(StackInstruction):
     """Removes the top-of-stack (TOS) item."""
@@ -144,106 +142,136 @@ class BinaryStackInstruction(StackInstruction):
     top-most stack item (TOS1) from the stack. They perform the operation, and
     put the result back on the stack.
     """
-    n_pop = 2
-    n_push = 1
+    def run(self, value_stack, *args, **kwargs):
+        y = value_stack.pop()
+        x = value_stack.pop()
+        z = self.binary_eval(x, y)
+        value_stack.push(z)
+
+    def binary_eval(self, x, y):
+        raise ValueError(
+            "Binary evaluation not implemented for %s" % (self.opname))
 
 class BINARY_POWER(BinaryStackInstruction):
     """Implements TOS = TOS1 ** TOS."""
-    pass
+    def binary_eval(self, x, y):
+        return x ** y
 
 class BINARY_MULTIPLY(BinaryStackInstruction):
     """Implements TOS = TOS1 * TOS."""
-    pass
+    def binary_eval(self, x, y):
+        return x * y
 
 class BINARY_FLOOR_DIVIDE(BinaryStackInstruction):
     """Implements TOS = TOS1 // TOS."""
-    pass
+    def binary_eval(self, x, y):
+        return x // y
 
 class BINARY_TRUE_DIVIDE(BinaryStackInstruction):
     """Implements TOS = TOS1 / TOS."""
-    pass
+    def binary_eval(self, x, y):
+        return x / y
 
 class BINARY_MODULO(BinaryStackInstruction):
     """Implements TOS = TOS1 % TOS."""
-    pass
+    def binary_eval(self, x, y):
+        return x % y
 
 class BINARY_ADD(BinaryStackInstruction):
     """Implements TOS = TOS1 + TOS."""
-    pass
+    def binary_eval(self, x, y):
+        return x + y
 
 class BINARY_SUBTRACT(BinaryStackInstruction):
     """Implements TOS = TOS1 - TOS."""
-    pass
+    def binary_eval(self, x, y):
+        return x - y
 
 class BINARY_SUBSCR(BinaryStackInstruction):
     """Implements TOS = TOS1[TOS]."""
-    pass
+    def binary_eval(self, x, y):
+        return x[y]
 
 class BINARY_LSHIFT(BinaryStackInstruction):
     """Implements TOS = TOS1 << TOS."""
-    pass
+    def binary_eval(self, x, y):
+        return x << y
 
 class BINARY_RSHIFT(BinaryStackInstruction):
     """Implements TOS = TOS1 >> TOS."""
-    pass
+    def binary_eval(self, x, y):
+        return x >> y
 
 class BINARY_AND(BinaryStackInstruction):
     """Implements TOS = TOS1 & TOS."""
-    pass
+    return x & y
 
 class BINARY_XOR(BinaryStackInstruction):
     """Implements TOS = TOS1 ^ TOS."""
-    pass
+    return x ^ y
 
 class BINARY_OR(BinaryStackInstruction):
     """Implements TOS = TOS1 | TOS."""
-    pass
+    return x | y
 
-class InplaceStackInstruction(StackInstruction):
-    n_pop = 2
-    n_push = 1
 
-class INPLACE_POWER(InplaceStackInstruction):
+class INPLACE_POWER(BINARY_POWER):
     """Implements in-place TOS = TOS1 ** TOS."""
 
-class INPLACE_MULTIPLY(InplaceStackInstruction):
+
+class INPLACE_MULTIPLY(BINARY_MULTIPLY):
     """Implements in-place TOS = TOS1 * TOS."""
 
-class INPLACE_FLOOR_DIVIDE(InplaceStackInstruction):
+class INPLACE_FLOOR_DIVIDE(BINARY_FLOOR_DIVIDE):
     """Implements in-place TOS = TOS1 // TOS."""
 
-class INPLACE_TRUE_DIVIDE(InplaceStackInstruction):
+class INPLACE_TRUE_DIVIDE(BINARY_TRUE_DIVIDE):
     """Implements in-place TOS = TOS1 / TOS."""
 
-class INPLACE_MODULO(InplaceStackInstruction):
+class INPLACE_MODULO(BINARY_MODULO):
     """Implements in-place TOS = TOS1 % TOS."""
 
-class INPLACE_ADD(InplaceStackInstruction):
+class INPLACE_ADD(BINARY_ADD):
     """Implements in-place TOS = TOS1 + TOS."""
 
-class INPLACE_SUBTRACT(InplaceStackInstruction):
+class INPLACE_SUBTRACT(BINARY_SUBTRACT):
     """Implements in-place TOS = TOS1 - TOS."""
 
-class INPLACE_LSHIFT(InplaceStackInstruction):
+class INPLACE_LSHIFT(BINARY_LSHIFT):
     """Implements in-place TOS = TOS1 << TOS."""
 
-class INPLACE_RSHIFT(InplaceStackInstruction):
+class INPLACE_RSHIFT(BINARY_RSHIFT):
     """Implements in-place TOS = TOS1 >> TOS."""
 
-class INPLACE_AND(InplaceStackInstruction):
+class INPLACE_AND(BINARY_AND):
     """Implements in-place TOS = TOS1 & TOS."""
 
-class INPLACE_XOR(InplaceStackInstruction):
+class INPLACE_XOR(BINARY_XOR):
     """Implements in-place TOS = TOS1 ^ TOS."""
 
-class INPLACE_OR(InplaceStackInstruction):
+class INPLACE_OR(BINARY_OR):
     """Implements in-place TOS = TOS1 | TOS."""
 
-class STORE_SUBSCR(InplaceStackInstruction):
+class STORE_SUBSCR(StackInstruction):
     """Implements TOS1[TOS] = TOS2."""
+    def run(self,
+            value_stack,
+            block_stack,
+            globals_dict,
+            locals_dict,
+            closure_cells):
+        z = value_stack.pop()
+        y = value_stack.pop()
+        x = value_stack.pop()
+        y[x] = z
+        value_stack.push(z)
 
-class DELETE_SUBSCR(InplaceStackInstruction):
+
+
+class DELETE_SUBSCR(StackInstruction):
     """Implements del TOS1[TOS]."""
+    n_pop = 2
+
 
 
 class PRINT_EXPR(StackInstruction):
@@ -251,7 +279,6 @@ class PRINT_EXPR(StackInstruction):
     removed from the stack and printed. In non-interactive mode, an expression
     statement is terminated with POP_TOP.
     """
-    pass
 
 class BREAK_LOOP(StackInstruction):
     """Terminates a loop due to a break statement."""
