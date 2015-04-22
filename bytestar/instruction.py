@@ -34,22 +34,20 @@ class StackInstruction(object):
 
     def __init__(
             self,
-            offset,
             arg=None,
             is_jump_target=False):
-        self.offset = offset
         self.arg = arg
         self.is_jump_target = is_jump_target
         self.is_jump = self.opcode in jump_opcodes
 
     def __str__(self):
-        args = OrderedDict(offset=self.offset)
+        kv_pairs = OrderedDict()
         if self.arg is not None:
-            args["arg"] = self.arg
+            kv_pairs["arg"] = self.arg
         if self.is_jump_target:
-            args["is_jump_target"] = True
+            kv_pairs["is_jump_target"] = True
         args_str = ", ".join(
-            "%s=%s" % (k, v) for (k, v) in args.items())
+            "%s=%s" % (k, v) for (k, v) in kv_pairs.items())
         return "%s(%s)" % (self.opname, args_str)
 
     def __repr__(self):
@@ -483,40 +481,52 @@ class IMPORT_FROM(ArgumentStackInstruction):
     STORE_FAST instruction."""
     pass
 
+class JumpStackInstruction(ArgumentStackInstruction):
+    def __init__(self, target_block, arg=None, is_jump_target=False):
+        self.target_block = target_block
+        ArgumentStackInstruction.__init__(
+            arg=arg,
+            is_jump_target=is_jump_target)
+
 class JUMP_FORWARD(ArgumentStackInstruction):
-    """Increments bytecode counter by delta."""
-    pass
-
-class POP_JUMP_IF_TRUE(ArgumentStackInstruction):
-    """If TOS is true, sets the bytecode counter to target. TOS is popped."""
-    pass
-
-class POP_JUMP_IF_FALSE(ArgumentStackInstruction):
-    """If TOS is false, sets the bytecode counter to target. TOS is popped."""
-    pass
-
-class JUMP_IF_TRUE_OR_POP(ArgumentStackInstruction):
-    """If TOS is true, sets the bytecode counter to target and leaves TOS on the stack.
-Otherwise (TOS is false), TOS is popped."""
-    pass
-
-class JUMP_IF_FALSE_OR_POP(ArgumentStackInstruction):
-    """If TOS is false, sets the bytecode counter to target and leaves TOS on the
-stack. Otherwise (TOS is true), TOS is popped."""
+    """Original meaning is a relative jump, but we normalize this to have a
+    target block."""
     pass
 
 class JUMP_ABSOLUTE(ArgumentStackInstruction):
-    """Set bytecode counter to target."""
+    """Since we're using explicit Block targets, same as JUMP_FORWARD"""
     pass
+
+class POP_JUMP_IF_TRUE(ArgumentStackInstruction):
+    """If TOS is true, jump to target block. TOS is popped."""
+    n_pop = 1
+
+
+class POP_JUMP_IF_FALSE(ArgumentStackInstruction):
+    """If TOS is false, jump to target block. TOS is popped."""
+    n_pop = 1
+
+class JUMP_IF_TRUE_OR_POP(ArgumentStackInstruction):
+    """If TOS is true, jump to target block and
+    leaves TOS on the stack. Otherwise (TOS is false), TOS is popped."""
+    n_pop = 1  # only if TOP is True!
+
+class JUMP_IF_FALSE_OR_POP(ArgumentStackInstruction):
+    """If TOS is false, jump to target block and leave TOS on the
+    stack. Otherwise (TOS is true), TOS is popped."""
+    n_pop = 1  # only if TOS is False!
+
 
 class FOR_ITER(ArgumentStackInstruction):
     """TOS is an iterator. Call its __next__() method. If this yields a new
     value, push it on the stack (leaving the iterator below it). If the iterator
     indicates it is exhausted TOS is popped, and the byte code counter is
     incremented by delta."""
+    pass
 
 class LOAD_GLOBAL(ArgumentStackInstruction):
     """Loads the global named co_names[namei] onto the stack."""
+    pass
 
 class SETUP_LOOP(ArgumentStackInstruction):
     """Pushes a block for a loop onto the block stack. The block spans from
