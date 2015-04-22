@@ -8,6 +8,8 @@ from opcode import (
     opmap as opname_to_opcode_dict,
     # list of opcode names
     opname as opcode_to_opname_list,
+    # list of comparison operator symbols
+    cmp_op as comparison_operator_list,
 
 )
 
@@ -69,10 +71,15 @@ class StackInstruction(object):
     def opcode(self):
         return opname_to_opcode_dict[self.opname]
 
-    # number of items removed from stack as inputs to the instruction
+    # number of values removed from stack as inputs to the instruction
     n_pop = 0
-    # number of items added back to the stack as outputs of the instruction
+    # number of values added back to the stack as outputs of the instruction
     n_push = 0
+
+    # number of blocks popped from the block stack
+    n_pop_block = 0
+    # number of blocks pushed on the block stack
+    n_push_block = 0
 
 
 class NOP(StackInstruction):
@@ -240,300 +247,404 @@ class STORE_SUBSCR(InplaceStackInstruction):
 class DELETE_SUBSCR(InplaceStackInstruction):
     """Implements del TOS1[TOS]."""
 
-# TODO: implement remaining instructions:
-"""
-PRINT_EXPR
-Implements the expression statement for the interactive mode. TOS is removed from the stack and printed. In non-interactive mode, an expression statement is terminated with POP_TOP.
-
-BREAK_LOOP
-Terminates a loop due to a break statement.
-
-CONTINUE_LOOP(target)
-Continues a loop due to a continue statement. target is the address to jump to (which should be a FOR_ITER instruction).
-
-SET_ADD(i)
-Calls set.add(TOS1[-i], TOS). Used to implement set comprehensions.
-
-LIST_APPEND(i)
-Calls list.append(TOS[-i], TOS). Used to implement list comprehensions.
-
-MAP_ADD(i)
-Calls dict.setitem(TOS1[-i], TOS, TOS1). Used to implement dict comprehensions.
-
-For all of the SET_ADD, LIST_APPEND and MAP_ADD instructions, while the added value or key/value pair is popped off, the container object remains on the stack so that it is available for further iterations of the loop.
-
-RETURN_VALUE
-Returns with TOS to the caller of the function.
 
-YIELD_VALUE
-Pops TOS and yields it from a generator.
-
-YIELD_FROM
-Pops TOS and delegates to it as a subiterator from a generator.
-
-New in version 3.3.
-
-IMPORT_STAR
-Loads all symbols not starting with '_' directly from the module TOS to the
-local namespace. The module is popped after loading all names. This opcode
-implements from module import *.
-
-POP_BLOCK
-Removes one block from the block stack. Per frame, there is a stack of blocks,
-denoting nested loops, try statements, and such.
-
-POP_EXCEPT
-Removes one block from the block stack. The popped block must be an exception
-handler block, as implicitly created when entering an except handler. In
-addition to popping extraneous values from the frame stack, the last three
-popped values are used to restore the exception state.
-
-END_FINALLY
-Terminates a finally clause. The interpreter recalls whether the exception has
-to be re-raised, or whether the function returns, and continues with the
-outer-next block.
-
-LOAD_BUILD_CLASS
-Pushes builtins.__build_class__() onto the stack. It is later called by
-CALL_FUNCTION to construct a class.
-
-SETUP_WITH(delta)
-This opcode performs several operations before a with block starts. First, it
-loads __exit__() from the context manager and pushes it onto the stack for
-later use by WITH_CLEANUP. Then, __enter__() is called, and a finally block
-pointing to delta is pushed. Finally, the result of calling the enter method is
-pushed onto the stack. The next opcode will either ignore it (POP_TOP), or
-store it in (a) variable(s) (STORE_FAST, STORE_NAME, or UNPACK_SEQUENCE).
-
-WITH_CLEANUP
-Cleans up the stack when a with statement block exits. TOS is the context
-manager’s __exit__() bound method. Below TOS are 1–3 values indicating how/why
-the finally clause was entered:
-
-SECOND = None
-(SECOND, THIRD) = (WHY_{RETURN,CONTINUE}), retval
-SECOND = WHY_*; no retval below it
-(SECOND, THIRD, FOURTH) = exc_info()
-In the last case, TOS(SECOND, THIRD, FOURTH) is called,
-otherwise TOS(None, None, None). In addition, TOS is removed from the stack.
-
-If the stack represents an exception, and the function call returns a ‘true’
-value, this information is “zapped” and replaced with a single WHY_SILENCED to
-prevent END_FINALLY from re-raising the exception. (But non-local gotos will
-    still be resumed.)
-
-All of the following opcodes expect arguments. An argument is two bytes, with
-the more significant byte last.
-
-STORE_NAME(namei)
-Implements name = TOS. namei is the index of name in the attribute co_names of
-the code object. The compiler tries to use STORE_FAST or STORE_GLOBAL if
-possible.
-
-DELETE_NAME(namei)
-Implements del name, where namei is the index into co_names attribute of the
-code object.
-
-UNPACK_SEQUENCE(count)
-Unpacks TOS into count individual values, which are put onto the stack
-right-to-left.
-
-UNPACK_EX(counts)
-Implements assignment with a starred target: Unpacks an iterable in TOS into
-individual values, where the total number of values can be smaller than the
-number of items in the iterable: one the new values will be a list of all
-leftover items.
-
-The low byte of counts is the number of values before the list value, the high
-byte of counts the number of values after it. The resulting values are put onto
-the stack right-to-left.
-
-STORE_ATTR(namei)
-Implements TOS.name = TOS1, where namei is the index of name in co_names.
-
-DELETE_ATTR(namei)
-Implements del TOS.name, using namei as index into co_names.
-
-STORE_GLOBAL(namei)
-Works as STORE_NAME, but stores the name as a global.
-
-DELETE_GLOBAL(namei)
-Works as DELETE_NAME, but deletes a global name.
-
-LOAD_CONST(consti)
-Pushes co_consts[consti] onto the stack.
-
-LOAD_NAME(namei)
-Pushes the value associated with co_names[namei] onto the stack.
-
-BUILD_TUPLE(count)
-Creates a tuple consuming count items from the stack, and pushes the resulting
-tuple onto the stack.
-
-BUILD_LIST(count)
-Works as BUILD_TUPLE, but creates a list.
-
-BUILD_SET(count)
-Works as BUILD_TUPLE, but creates a set.
-
-BUILD_MAP(count)
-Pushes a new dictionary object onto the stack. The dictionary is pre-sized to
-hold count entries.
-
-LOAD_ATTR(namei)
-Replaces TOS with getattr(TOS, co_names[namei]).
-
-COMPARE_OP(opname)
-Performs a Boolean operation. The operation name can be found in cmp_op[opname].
-
-IMPORT_NAME(namei)
-Imports the module co_names[namei]. TOS and TOS1 are popped and provide the
-fromlist and level arguments of __import__(). The module object is pushed onto
-the stack. The current namespace is not affected: for a proper import statement,
-a subsequent STORE_FAST instruction modifies the namespace.
-
-IMPORT_FROM(namei)
-Loads the attribute co_names[namei] from the module found in TOS. The resulting
-object is pushed onto the stack, to be subsequently stored by a STORE_FAST
-instruction.
-
-JUMP_FORWARD(delta)
-Increments bytecode counter by delta.
-
-POP_JUMP_IF_TRUE(target)
-If TOS is true, sets the bytecode counter to target. TOS is popped.
-
-POP_JUMP_IF_FALSE(target)
-If TOS is false, sets the bytecode counter to target. TOS is popped.
-
-JUMP_IF_TRUE_OR_POP(target)
-If TOS is true, sets the bytecode counter to target and leaves TOS on the stack.
-Otherwise (TOS is false), TOS is popped.
-
-JUMP_IF_FALSE_OR_POP(target)
-If TOS is false, sets the bytecode counter to target and leaves TOS on the
-stack. Otherwise (TOS is true), TOS is popped.
-
-JUMP_ABSOLUTE(target)
-Set bytecode counter to target.
-
-FOR_ITER(delta)
-TOS is an iterator. Call its __next__() method. If this yields a new value,
-push it on the stack (leaving the iterator below it). If the iterator indicates
-it is exhausted TOS is popped, and the byte code counter is incremented by
-delta.
-
-LOAD_GLOBAL(namei)
-Loads the global named co_names[namei] onto the stack.
-
-SETUP_LOOP(delta)
-Pushes a block for a loop onto the block stack. The block spans from the current
-instruction with a size of delta bytes.
-
-SETUP_EXCEPT(delta)
-Pushes a try block from a try-except clause onto the block stack. delta
-points to the first except block.
-
-SETUP_FINALLY(delta)
-Pushes a try block from a try-except clause onto the block stack. delta points
-to the finally block.
-
-STORE_MAP
-Store a key and value pair in a dictionary. Pops the key and value while leaving
-the dictionary on the stack.
-
-LOAD_FAST(var_num)
-Pushes a reference to the local co_varnames[var_num] onto the stack.
-
-STORE_FAST(var_num)
-Stores TOS into the local co_varnames[var_num].
-
-DELETE_FAST(var_num)
-Deletes local co_varnames[var_num].
-
-LOAD_CLOSURE(i)
-Pushes a reference to the cell contained in slot i of the cell and free variable
-storage. The name of the variable is co_cellvars[i] if i is less than the length
-of co_cellvars. Otherwise it is co_freevars[i - len(co_cellvars)].
-
-LOAD_DEREF(i)
-Loads the cell contained in slot i of the cell and free variable storage.
-Pushes a reference to the object the cell contains on the stack.
-
-LOAD_CLASSDEREF(i)
-Much like LOAD_DEREF but first checks the locals dictionary before consulting
-the cell. This is used for loading free variables in class bodies.
-
-STORE_DEREF(i)
-Stores TOS into the cell contained in slot i of the cell and free variable
-storage.
-
-DELETE_DEREF(i)
-Empties the cell contained in slot i of the cell and free variable storage.
-Used by the del statement.
-
-RAISE_VARARGS(argc)
-Raises an exception. argc indicates the number of parameters to the raise
-statement, ranging from 0 to 3. The handler will find the traceback as TOS2,
-the parameter as TOS1, and the exception as TOS.
-
-CALL_FUNCTION(argc)
-Calls a function. The low byte of argc indicates the number of positional
-parameters, the high byte the number of keyword parameters. On the stack, the
-opcode finds the keyword parameters first. For each keyword argument, the value
-is on top of the key. Below the keyword parameters, the positional parameters
-are on the stack, with the right-most parameter on top. Below the parameters,
-the function object to call is on the stack. Pops all function arguments, and
-the function itself off the stack, and pushes the return value.
-
-MAKE_FUNCTION(argc)
-Pushes a new function object on the stack. From bottom to top, the consumed
-stack must consist of
-
-argc & 0xFF default argument objects in positional order
-(argc >> 8) & 0xFF pairs of name and default argument, with the name just below
-the object on the stack, for keyword-only parameters
-(argc >> 16) & 0x7FFF parameter annotation objects
-a tuple listing the parameter names for the annotations (only if there are only
-annotation objects)
-the code associated with the function (at TOS1)
-the qualified name of the function (at TOS)
-
-MAKE_CLOSURE(argc)
-Creates a new function object, sets its __closure__ slot, and pushes it on the
-stack. TOS is the qualified name of the function, TOS1 is the code associated
-with the function, and TOS2 is the tuple containing cells for the closure’s
-free variables. The function also has argc default parameters, which are found
-below the cells.
-
-BUILD_SLICE(argc)
-Pushes a slice object on the stack. argc must be 2 or 3. If it is 2,
-slice(TOS1, TOS) is pushed; if it is 3, slice(TOS2, TOS1, TOS) is pushed.
-See the slice() built-in function for more information.
-
-EXTENDED_ARG(ext)
-Prefixes any opcode which has an argument too big to fit into the default two
-bytes. ext holds two additional bytes which, taken together with the subsequent
-opcode’s argument, comprise a four-byte argument, ext being the two
-most-significant bytes.
-
-CALL_FUNCTION_VAR(argc)
-Calls a function. argc is interpreted as in CALL_FUNCTION. The top element on
-the stack contains the variable argument list, followed by keyword and
-positional arguments.
-
-CALL_FUNCTION_KW(argc)
-Calls a function. argc is interpreted as in CALL_FUNCTION. The top element on
-the stack contains the keyword arguments dictionary, followed by explicit
-keyword and positional arguments.
-
-CALL_FUNCTION_VAR_KW(argc)
-Calls a function. argc is interpreted as in CALL_FUNCTION. The top element on
-the stack contains the keyword arguments dictionary, followed by the
-variable-arguments tuple, followed by explicit keyword and positional arguments.
-
-HAVE_ARGUMENT
-This is not really an opcode. It identifies the dividing line between opcodes
-which don’t take arguments < HAVE_ARGUMENT and those which do >= HAVE_ARGUMENT.
-
-"""
+class PRINT_EXPR(StackInstruction):
+    """Implements the expression statement for the interactive mode. TOS is
+    removed from the stack and printed. In non-interactive mode, an expression
+    statement is terminated with POP_TOP.
+    """
+    pass
+
+class BREAK_LOOP(StackInstruction):
+    """Terminates a loop due to a break statement."""
+    pass
+
+class CONTINUE_LOOP(StackInstruction):
+    """Continues a loop due to a continue statement. target is the address to
+    jump to (which should be a FOR_ITER instruction).
+    """
+    pass
+
+class CollectionAddStackInstruction(StackInstruction):
+    """Base class for imperative add/append instructions.
+
+
+    For all of the SET_ADD, LIST_APPEND and MAP_ADD instructions,
+    while the added value or key/value pair is popped off, the container object
+    remains on the stack so that it is available for further iterations of the
+    loop.
+    """
+    n_pop = 1
+    n_push = 0
+
+
+class SET_ADD(CollectionAddStackInstruction):
+    """
+    Calls set.add(TOS1[-i], TOS).
+    Used to implement set comprehensions.
+    """
+    pass
+
+class LIST_APPEND(CollectionAddStackInstruction):
+    """
+    Calls list.append(TOS[-i], TOS).
+    Used to implement list comprehensions.
+    """
+    pass
+
+class MAP_ADD(CollectionAddStackInstruction):
+    """
+    Calls dict.setitem(TOS1[-i], TOS, TOS1).
+    Used to implement dict comprehensions.
+    """
+    pass
+
+class RETURN_VALUE(StackInstruction):
+    """Returns with TOS to the caller of the function."""
+    pass
+
+
+class YIELD_VALUE(StackInstruction):
+    """Pops TOS and yields it from a generator."""
+    n_pop = 1
+    n_push = 0
+
+class YIELD_FROM(StackInstruction):
+    """Pops TOS and delegates to it as a subiterator from a generator."""
+    n_pop = 1
+    n_push = 0
+
+class IMPORT_STAR(StackInstruction):
+    """Loads all symbols not starting with '_' directly from the module TOS to
+    the local namespace. The module is popped after loading all names. This
+    opcode implements from module import *."""
+    pass
+
+class POP_BLOCK(StackInstruction):
+    """Removes one block from the block stack. Per frame, there is a stack of
+    blocks, denoting nested loops, try statements, and such."""
+    n_pop_block = 1
+
+class POP_EXCEPT(StackInstruction):
+
+    """
+    Removes one block from the block stack. The popped block must be an
+    exception handler block, as implicitly created when entering an except
+    handler. In addition to popping extraneous values from the frame stack,
+    the last three popped values are used to restore the exception state.
+    """
+    n_pop_block = 1
+
+class END_FINALLY(StackInstruction):
+    """
+    Terminates a finally clause. The interpreter recalls whether the exception
+    has to be re-raised, or whether the function returns, and continues with the
+    outer-next block.
+    """
+    pass
+
+class LOAD_BUILD_CLASS(StackInstruction):
+    """Pushes builtins.__build_class__() onto the stack. It is later called by
+    CALL_FUNCTION to construct a class."""
+    n_push = 1
+
+class SETUP_WITH(StackInstruction):
+    """This opcode performs several operations before a with block starts.
+    First, it loads __exit__() from the context manager and pushes it onto the
+    stack for later use by WITH_CLEANUP. Then, __enter__() is called, and a
+    finally block pointing to delta is pushed. Finally, the result of calling
+    the enter method is pushed onto the stack. The next opcode will either
+    ignore it (POP_TOP), or store it in (a) variable(s)
+    (STORE_FAST, STORE_NAME, or UNPACK_SEQUENCE).
+    """
+    n_push = 2
+    n_push_block = 1
+
+class WITH_CLEANUP(StackInstruction):
+    """Cleans up the stack when a with statement block exits. TOS is the context
+    manager's __exit__() bound method.
+    Below TOS are 1-3 values indicating how/why the finally clause was entered:
+    SECOND = None
+    (SECOND, THIRD) = (WHY_{RETURN,CONTINUE}), retval
+    SECOND = WHY_*; no retval below it
+    (SECOND, THIRD, FOURTH) = exc_info()
+    In the last case, TOS(SECOND, THIRD, FOURTH) is called,
+    otherwise TOS(None, None, None). In addition, TOS is removed from the stack.
+
+
+    If the stack represents an exception, and the function call returns a 'true'
+    value, this information is "zapped" and replaced with a single WHY_SILENCED
+    to prevent END_FINALLY from re-raising the exception.
+    (But non-local gotos will still be resumed.)
+    """
+    n_pop = 1
+
+class ArgumentStackInstruction(StackInstruction):
+    """All of the following opcodes expect arguments.
+    An argument is two bytes, with the more significant byte last."""
+    pass
+
+
+class STORE_NAME(ArgumentStackInstruction):
+    """Implements name = TOS. namei is the index of name in the attribute
+    co_names of the code object. The compiler tries to use STORE_FAST or
+    STORE_GLOBAL if possible."""
+    pass
+
+class DELETE_NAME(ArgumentStackInstruction):
+    """Implements del name, where namei is the index into co_names attribute of the
+    code object."""
+    pass
+
+class UNPACK_SEQUENCE(ArgumentStackInstruction):
+    """Unpacks TOS into count individual values, which are put onto the stack
+    right-to-left."""
+    pass
+
+class UNPACK_EX(ArgumentStackInstruction):
+    """Implements assignment with a starred target: Unpacks an iterable in TOS
+    into individual values, where the total number of values can be smaller than
+    the number of items in the iterable: one the new values will be a list of
+    all leftover items.
+
+    The low byte of counts is the number of values before the list value,
+    the high byte of counts the number of values after it.
+    The resulting values are put onto the stack right-to-left.
+    """
+    pass
+
+class STORE_ATTR(ArgumentStackInstruction):
+    """Implements TOS.name = TOS1,
+    where namei is the index of name in co_names."""
+    pass
+
+class DELETE_ATTR(ArgumentStackInstruction):
+    """Implements del TOS.name, using namei as index into co_names."""
+    pass
+
+class STORE_GLOBAL(ArgumentStackInstruction):
+    """Works as STORE_NAME, but stores the name as a global."""
+    pass
+
+class DELETE_GLOBAL(ArgumentStackInstruction):
+    """Works as DELETE_NAME, but deletes a global name."""
+    pass
+
+class LOAD_CONST(ArgumentStackInstruction):
+    """Pushes co_consts[consti] onto the stack."""
+    pass
+
+class LOAD_NAME(ArgumentStackInstruction):
+    """Pushes the value associated with co_names[namei] onto the stack."""
+    pass
+
+class BuildCollectionStackInstruction(ArgumentStackInstruction):
+    """Base class for all instructions which build a collection. Number of
+    elements to pop off the stack is given in self.arg"""
+    pass
+
+class BUILD_TUPLE(BuildCollectionStackInstruction):
+    """Creates a tuple consuming count items from the stack, and pushes the
+    resulting tuple onto the stack."""
+    pass
+
+class BUILD_LIST(BuildCollectionStackInstruction):
+    """Works as BUILD_TUPLE, but creates a list."""
+    pass
+
+class BUILD_SET(BuildCollectionStackInstruction):
+    """Works as BUILD_TUPLE, but creates a set."""
+    pass
+
+class BUILD_MAP(BuildCollectionStackInstruction):
+    """Pushes a new dictionary object onto the stack. The dictionary is
+    pre-sized to hold count entries."""
+
+class LOAD_ATTR(ArgumentStackInstruction):
+    """Replaces TOS with getattr(TOS, co_names[namei])."""
+    pass
+
+
+class COMPARE_OP_IS(ArgumentStackInstruction):
+    """Performs a Boolean operation. The operation name can be found in
+    cmp_op[opname]."""
+    pass
+
+class IMPORT_NAME(ArgumentStackInstruction):
+    """Imports the module co_names[namei]. TOS and TOS1 are popped and provide the
+    fromlist and level arguments of __import__(). The module object is pushed onto
+    the stack. The current namespace is not affected: for a proper import statement,
+    a subsequent STORE_FAST instruction modifies the namespace."""
+    pass
+
+class IMPORT_FROM(ArgumentStackInstruction):
+    """Loads the attribute co_names[namei] from the module found in TOS. The
+    resulting object is pushed onto the stack, to be subsequently stored by a
+    STORE_FAST instruction."""
+    pass
+
+class JUMP_FORWARD(ArgumentStackInstruction):
+    """Increments bytecode counter by delta."""
+    pass
+
+class POP_JUMP_IF_TRUE(ArgumentStackInstruction):
+    """If TOS is true, sets the bytecode counter to target. TOS is popped."""
+    pass
+
+class POP_JUMP_IF_FALSE(ArgumentStackInstruction):
+    """If TOS is false, sets the bytecode counter to target. TOS is popped."""
+    pass
+
+class JUMP_IF_TRUE_OR_POP(ArgumentStackInstruction):
+    """If TOS is true, sets the bytecode counter to target and leaves TOS on the stack.
+Otherwise (TOS is false), TOS is popped."""
+    pass
+
+class JUMP_IF_FALSE_OR_POP(ArgumentStackInstruction):
+    """If TOS is false, sets the bytecode counter to target and leaves TOS on the
+stack. Otherwise (TOS is true), TOS is popped."""
+    pass
+
+class JUMP_ABSOLUTE(ArgumentStackInstruction):
+    """Set bytecode counter to target."""
+    pass
+
+class FOR_ITER(ArgumentStackInstruction):
+    """TOS is an iterator. Call its __next__() method. If this yields a new
+    value, push it on the stack (leaving the iterator below it). If the iterator
+    indicates it is exhausted TOS is popped, and the byte code counter is
+    incremented by delta."""
+
+class LOAD_GLOBAL(ArgumentStackInstruction):
+    """Loads the global named co_names[namei] onto the stack."""
+
+class SETUP_LOOP(ArgumentStackInstruction):
+    """Pushes a block for a loop onto the block stack. The block spans from
+    the current instruction with a size of delta bytes."""
+    pass
+
+class SETUP_EXCEPT(ArgumentStackInstruction):
+    """Pushes a try block from a try-except clause onto the block stack. delta
+points to the first except block."""
+    pass
+
+class SETUP_FINALLY(ArgumentStackInstruction):
+    """Pushes a try block from a try-except clause onto the block stack.
+    delta points to the finally block."""
+    pass
+
+class STORE_MAP(ArgumentStackInstruction):
+    """Store a key and value pair in a dictionary.
+    Pops the key and value while leaving the dictionary on the stack."""
+    pass
+
+class LOAD_FAST(ArgumentStackInstruction):
+    """Pushes a reference to the local co_varnames[var_num] onto the stack."""
+    pass
+
+class STORE_FAST(ArgumentStackInstruction):
+    """Stores TOS into the local co_varnames[var_num]."""
+    pass
+
+class DELETE_FAST(ArgumentStackInstruction):
+    """Deletes local co_varnames[var_num]."""
+    pass
+
+class LOAD_CLOSURE(ArgumentStackInstruction):
+    """Pushes a reference to the cell contained in slot i of the cell and free
+    variable storage. The name of the variable is co_cellvars[i] if i is less
+    than the length of co_cellvars.
+    Otherwise it is co_freevars[i - len(co_cellvars)]."""
+    pass
+
+class LOAD_DEREF(ArgumentStackInstruction):
+    """Loads the cell contained in slot i of the cell and free variable storage.
+    Pushes a reference to the object the cell contains on the stack."""
+    pass
+
+class LOAD_CLASSDEREF(ArgumentStackInstruction):
+    """Much like LOAD_DEREF but first checks the locals dictionary before
+    consulting the cell. This is used for loading free variables in class
+    bodies."""
+    pass
+
+class STORE_DEREF(ArgumentStackInstruction):
+    """Stores TOS into the cell contained in slot i of the cell and free
+    variable storage."""
+    pass
+
+class DELETE_DEREF(ArgumentStackInstruction):
+    """Empties the cell contained in slot i of the cell and free variable
+    storage. Used by the del statement.
+    """
+
+class RAISE_VARARGS(ArgumentStackInstruction):
+    """Raises an exception. argc indicates the number of parameters to the raise
+    statement, ranging from 0 to 3. The handler will find the traceback as TOS2,
+    the parameter as TOS1, and the exception as TOS."""
+    pass
+
+class CALL_FUNCTION(ArgumentStackInstruction):
+    """Calls a function. The low byte of argc indicates the number of positional
+    parameters, the high byte the number of keyword parameters. On the stack,
+    the opcode finds the keyword parameters first. For each keyword argument,
+    the value is on top of the key. Below the keyword parameters, the positional
+    parameters are on the stack, with the right-most parameter on top. Below the
+    parameters, the function object to call is on the stack. Pops all function
+    arguments, and the function itself off the stack, and pushes the return
+    value.
+    """
+    pass
+
+class MAKE_FUNCTION(ArgumentStackInstruction):
+    """Pushes a new function object on the stack. From bottom to top,
+    the consumed stack must consist of
+
+    - argc & 0xFF default argument objects in positional order
+    - (argc >> 8) & 0xFF pairs of name and default argument,
+        with the name just below the object on the stack, for
+        keyword-only parameters
+    - (argc >> 16) & 0x7FFF parameter annotation objects
+        a tuple listing the parameter names for the annotations
+        (only if there are only annotation objects)
+    - the code associated with the function (at TOS1)
+    - the qualified name of the function (at TOS)
+    """
+    pass
+
+class MAKE_CLOSURE(ArgumentStackInstruction):
+    """Creates a new function object, sets its __closure__ slot, and pushes
+    it on the stack. TOS is the qualified name of the function, TOS1 is the code
+    associated with the function, and TOS2 is the tuple containing cells for the
+    closure's free variables. The function also has argc default parameters,
+    which are found below the cells.
+    """
+    pass
+
+class BUILD_SLICE(ArgumentStackInstruction):
+    """Pushes a slice object on the stack. argc must be 2 or 3. If it is 2,
+    slice(TOS1, TOS) is pushed; if it is 3, slice(TOS2, TOS1, TOS) is pushed.
+    See the slice() built-in function for more information.
+    """
+    pass
+
+class CALL_FUNCTION_VAR(ArgumentStackInstruction):
+    """Calls a function. argc is interpreted as in CALL_FUNCTION.
+    The top element on the stack contains the variable argument list, followed
+    by keyword and positional arguments.
+    """
+
+class CALL_FUNCTION_KW(ArgumentStackInstruction):
+    """Calls a function. argc is interpreted as in CALL_FUNCTION.
+    The top element on the stack contains the keyword arguments dictionary,
+    followed by explicit keyword and positional arguments.
+    """
+    pass
+
+class CALL_FUNCTION_VAR_KW(ArgumentStackInstruction):
+    """Calls a function. argc is interpreted as in CALL_FUNCTION.
+    The top element on the stack contains the keyword arguments dictionary,
+    followed by the variable-arguments tuple, followed by explicit keyword and
+    positional arguments.
+    """
+    pass
